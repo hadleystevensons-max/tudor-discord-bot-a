@@ -12,6 +12,7 @@
   "dependencies": {
     "@discordjs/rest": "^2.6.1",
     "discord-api-types": "^0.38.42",
-    "discord.js": "^14.25.1"
+    "discord.js": "^14.25.1",
+    "dotenv": "^17.4.0"
   }
 }
