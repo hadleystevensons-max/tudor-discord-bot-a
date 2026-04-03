@@ -1,121 +1,73 @@
-// index.js
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
+// Load environment variables
+require('dotenv').config();
 
-// ----------------------
-// CONFIG
-// ----------------------
-const token = 'MTQ4NzQ1MTc1NTgxNzA3NDc0OQ.Ga6ukI.LOuCpN9MGnkA4dzv5QZoUCG7erS6dKeUSd20vw';
-const clientId = '1487451755817074749';
-const guildId = '1474559251149226177';
+const { Client, GatewayIntentBits, Collection, REST, Routes } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-// ----------------------
-// DEFINE COMMANDS
-// ----------------------
-const commands = [
-  new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Replies with Pong!'),
+// Create a new client
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-  new SlashCommandBuilder()
-    .setName('hello')
-    .setDescription('Greets the user'),
+// Load environment variables
+const token = process.env.DISCORD_TOKEN;
+const clientId = process.env.CLIENT_ID;
+const guildId = process.env.GUILD_ID;
 
-  new SlashCommandBuilder()
-    .setName('add')
-    .setDescription('Adds two numbers')
-    .addNumberOption(option =>
-      option.setName('num1')
-            .setDescription('First number')
-            .setRequired(true))
-    .addNumberOption(option =>
-      option.setName('num2')
-            .setDescription('Second number')
-            .setRequired(true)),
+// Check token
+if (!token) {
+    console.error("ERROR: DISCORD_TOKEN is missing in .env!");
+    process.exit(1);
+}
 
-  new SlashCommandBuilder()
-    .setName('say')
-    .setDescription('Repeats your message')
-    .addStringOption(option =>
-      option.setName('message')
-            .setDescription('The message to repeat')
-            .setRequired(true)),
-    
-  new SlashCommandBuilder()
-    .setName('dm')
-    .setDescription('Sends a private message to a user')
-    .addUserOption(option =>
-        option.setName('target')
-        .setDescription('The user to DM')
-        .setRequired(true))
-    .addStringOption(option =>
-        option.setName('message')
-            .setDescription('The user to DM')
-            .setRequired(true))
-    
-].map(cmd => cmd.toJSON()); // <-- convert to JSON for Discord API
+// Setup commands collection
+client.commands = new Collection();
+const commands = [];
+const commandsPath = path.join(__dirname, 'commands');
 
-// ----------------------
-// REGISTER COMMANDS
-// ----------------------
+if (fs.existsSync(commandsPath)) {
+    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+    for (const file of commandFiles) {
+        const command = require(`./commands/${file}`);
+        client.commands.set(command.data.name, command);
+        commands.push(command.data.toJSON());
+    }
+}
+
+// Register slash commands (for a single guild, faster for testing)
 const rest = new REST({ version: '10' }).setToken(token);
 
 (async () => {
-  try {
-    console.log('Refreshing slash commands...');
-    await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
-      { body: commands }
-    );
-    console.log('Slash commands registered successfully!');
-  } catch (error) {
-    console.error(error);
-  }
+    try {
+        console.log('Refreshing slash commands...');
+        await rest.put(
+            Routes.applicationGuildCommands(clientId, guildId),
+            { body: commands }
+        );
+        console.log('Slash commands registered successfully!');
+    } catch (error) {
+        console.error('Error registering commands:', error);
+    }
 })();
 
-// ----------------------
-// CREATE CLIENT
-// ----------------------
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}`);
-});
-
-// ----------------------
-// HANDLE INTERACTIONS
-// ----------------------
+// Handle interactions
 client.on('interactionCreate', async interaction => {
-  if (!interaction.isCommand()) return;
+    if (!interaction.isCommand()) return;
 
-  const { commandName, options } = interaction;
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return;
 
-  if (commandName === 'ping') {
-    await interaction.reply('Pong!');
-  } else if (commandName === 'hello') {
-    await interaction.reply(`Hello, ${interaction.user.username}!`);
-  } else if (commandName === 'add') {
-    const num1 = options.getNumber('num1');
-    const num2 = options.getNumber('num2');
-    await interaction.reply(`The sum is ${num1 + num2}`);
-  } else if (commandName === 'say') {
-    const message = options.getString('message');
-    await interaction.reply(message);
-  } else if (commandName === 'dm'){
-    const target = options.getUser('target');
-    const dmMessage = options.getString('message');
-
-    try{
-        await target.send(dmMessage);
-        await interaction.reply({ content: `Message sent to ${target.username}!`, ephemeral: true });
+    try {
+        await command.execute(interaction);
     } catch (error) {
         console.error(error);
-        await interaction.reply({ content: `Could not DM ${target.username}.`, ephemeral: true });
-
+        await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
     }
-  }
 });
 
-// ----------------------
-// LOGIN
-// ----------------------
+// Bot ready
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}`);
+});
+
+// Login
 client.login(token);
